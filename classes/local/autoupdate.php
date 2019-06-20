@@ -361,13 +361,20 @@ class autoupdate {
     }
 
     public static function update_from_event(\core\event\base $event) {
-        global $CFG;
+        global $CFG, $DB;
         require_once($CFG->dirroot.'/mod/checklist/autoupdate.php');
         if ($event->target == 'course_module_completion' && $event->action == 'updated') {
             // Update from a completion change event.
             $comp = $event->get_record_snapshot('course_modules_completion', $event->objectid);
             // Update any relevant checklists.
             checklist_completion_autoupdate($comp->coursemoduleid, $comp->userid, $comp->completionstate);
+        } else if ($event->target == 'role' && $event->action == 'assigned' && $event->contextlevel == "50") {
+            // When a user is assigned a role, grab their completion data and re-run course_completion auto updates
+            //  this is needed in case they were assigned a role in a course that has a course completion check for a course they've already completed
+            $ccids = $DB->get_records_sql('SELECT course from {course_completions} WHERE timecompleted is not NULL and userid = :userid', ['userid'=>$event->relateduserid]);
+            foreach($ccids as $ccid){
+                checklist_course_completion_autoupdate($ccid->course, $event->relateduserid);
+            }
         } else if ($event->target == 'course' && $event->action == 'completed') {
 
             // Update from a course completion event.
