@@ -2,8 +2,7 @@
 // This file is part of Moodle - http://moodle.org/
 //
 // Moodle is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
+// it under the terms of the GNU General Public License as published by // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
 // Moodle is distributed in the hope that it will be useful,
@@ -368,13 +367,25 @@ class autoupdate {
             $comp = $event->get_record_snapshot('course_modules_completion', $event->objectid);
             // Update any relevant checklists.
             checklist_completion_autoupdate($comp->coursemoduleid, $comp->userid, $comp->completionstate);
-        } else if ($event->target == 'role' && $event->action == 'assigned' && $event->contextlevel == "50") {
-            // When a user is assigned a role, grab their completion data and re-run course_completion auto updates
-            //  this is needed in case they were assigned a role in a course that has a course completion check for a course they've already completed
-            $ccids = $DB->get_records_sql('SELECT course from {course_completions} WHERE timecompleted is not NULL and userid = :userid', ['userid'=>$event->relateduserid]);
-            foreach($ccids as $ccid){
-                checklist_course_completion_autoupdate($ccid->course, $event->relateduserid);
-            }
+        } else if ($event->target == 'role' && $event->action == 'assigned' && $event->contextlevel == CONTEXT_COURSE) {
+            // Get a list of checklist items in course that have linked courses that are already complete.
+            $sql = "
+            SELECT ci.id as itemid, ci.checklist, c.teacheredit, ck.*, c.course
+            FROM {checklist_item} ci
+            INNER JOIN {checklist} c
+                ON ci.checklist = c.id
+                AND c.course = :courseid
+                AND ci.linkcourseid is not null
+            INNER JOIN {course_completions} cc
+                ON cc.course = ci.linkcourseid
+                AND cc.userid = :userid
+                AND cc.timecompleted is not null
+            LEFT JOIN {checklist_check} ck ON ck.item = ci.id AND ck.userid = :userid2
+            WHERE c.autoupdate > 0
+            ";
+            $params = array('userid' => $event->relateduserid, 'courseid' => $event->courseid, 'userid2' => $event->relateduserid);
+            $checks = $DB->get_records_sql($sql, $params);
+            checklist_completion_update_checks($event->relateduserid, $checks, true);
         } else if ($event->target == 'course' && $event->action == 'completed') {
 
             // Update from a course completion event.
